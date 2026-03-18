@@ -66,12 +66,26 @@ export interface GameDetail extends GameSummary {
   recent_events: GameEvent[];
 }
 
+export interface DataMeta {
+  source: string;
+  as_of: string | null;
+  stale_seconds: number;
+  warning: string | null;
+}
+
 export interface TodayGamesResponse {
   date: string;
   games: GameSummary[];
+  meta: DataMeta;
+}
+
+export interface GameDetailResponse {
+  game: GameDetail;
+  meta: DataMeta;
 }
 
 export interface EventsResponse {
   game_id: string;
   events: GameEvent[];
+  meta: DataMeta;
 }

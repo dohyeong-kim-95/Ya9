@@ -1,4 +1,4 @@
-import type { TodayGamesResponse, GameDetail, EventsResponse } from "./types";
+import type { TodayGamesResponse, GameDetailResponse, EventsResponse } from "./types";
 
 const API_BASE = process.env.NEXT_PUBLIC_API_URL || "http://localhost:8000";
 
@@ -13,7 +13,7 @@ export function fetchTodayGames() {
 }
 
 export function fetchGameDetail(gameId: string) {
-  return fetchJSON<GameDetail>(`/api/games/${gameId}`);
+  return fetchJSON<GameDetailResponse>(`/api/games/${gameId}`);
 }
 
 export function fetchGameEvents(gameId: string) {

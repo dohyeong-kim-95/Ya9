@@ -144,14 +144,32 @@ class GameDetail(BaseModel):
     recent_events: list[GameEvent]
 
 
+class DataMeta(BaseModel):
+    """Metadata about the data freshness and source."""
+
+    source: str = "mock"
+    as_of: Optional[str] = None
+    stale_seconds: int = 0
+    warning: Optional[str] = None
+
+
 class TodayGamesResponse(BaseModel):
     date: str
     games: list[GameSummary]
+    meta: DataMeta = DataMeta()
+
+
+class GameDetailResponse(BaseModel):
+    """Wrapper around GameDetail with metadata."""
+
+    game: GameDetail
+    meta: DataMeta = DataMeta()
 
 
 class EventsResponse(BaseModel):
     game_id: str
     events: list[GameEvent]
+    meta: DataMeta = DataMeta()
 
 
 class HealthResponse(BaseModel):

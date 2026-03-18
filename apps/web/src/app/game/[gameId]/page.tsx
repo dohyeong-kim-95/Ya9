@@ -3,7 +3,7 @@
 import { useEffect, useState, useCallback } from "react";
 import { useParams } from "next/navigation";
 import Link from "next/link";
-import type { GameDetail, GameSummary } from "@/lib/types";
+import type { GameDetail, GameSummary, DataMeta } from "@/lib/types";
 import { fetchGameDetail, fetchTodayGames } from "@/lib/api";
 import { POLL_INTERVAL_GAME } from "@/lib/constants";
 import Scoreboard from "@/components/hud/Scoreboard";
@@ -18,17 +18,19 @@ export default function GameHUDPage() {
   const gameId = params.gameId as string;
 
   const [game, setGame] = useState<GameDetail | null>(null);
+  const [meta, setMeta] = useState<DataMeta | null>(null);
   const [allGames, setAllGames] = useState<GameSummary[]>([]);
   const [error, setError] = useState<string | null>(null);
   const [loading, setLoading] = useState(true);
 
   const loadGame = useCallback(async () => {
     try {
-      const [detail, today] = await Promise.all([
+      const [detailResp, today] = await Promise.all([
         fetchGameDetail(gameId),
         fetchTodayGames(),
       ]);
-      setGame(detail);
+      setGame(detailResp.game);
+      setMeta(detailResp.meta);
       setAllGames(today.games);
       setError(null);
     } catch {
@@ -75,10 +77,20 @@ export default function GameHUDPage() {
 
   return (
     <div className="px-4 py-4 flex flex-col gap-3">
-      {/* Back link */}
-      <Link href="/" className="text-xs text-accent">
-        ← 전체 경기
-      </Link>
+      {/* Back link + staleness */}
+      <div className="flex items-center justify-between">
+        <Link href="/" className="text-xs text-accent">
+          ← 전체 경기
+        </Link>
+        {meta?.warning && (
+          <span className="text-[10px] text-amber-400">{meta.warning}</span>
+        )}
+        {meta && !meta.warning && meta.source !== "mock" && (
+          <span className="text-[10px] text-gray-500">
+            {meta.source} · {meta.stale_seconds}s ago
+          </span>
+        )}
+      </div>
 
       {/* Scoreboard */}
       <Scoreboard game={game} />
