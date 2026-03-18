@@ -31,8 +31,6 @@ class IngestionScheduler:
         self.store = store
         self._running = False
         self._task: asyncio.Task | None = None
-        # Map game_id → game_url for detail fetching
-        self._game_urls: dict[str, str] = {}
         # Track which final games have been fetched
         self._final_fetched: set[str] = set()
 
@@ -77,7 +75,7 @@ class IngestionScheduler:
                 if now - last_live_fetch >= LIVE_INTERVAL:
                     live_games = [g for g in games if g.status.value == "live"]
                     for game in live_games:
-                        url = self._game_urls.get(game.game_id, "")
+                        url = self.pipeline.game_urls.get(game.game_id, "")
                         if url:
                             await self.pipeline.refresh_game_detail(url, game.game_id)
                     last_live_fetch = now
@@ -86,7 +84,7 @@ class IngestionScheduler:
                 if now - last_scheduled_fetch >= SCHEDULED_INTERVAL:
                     scheduled_games = [g for g in games if g.status.value == "scheduled"]
                     for game in scheduled_games:
-                        url = self._game_urls.get(game.game_id, "")
+                        url = self.pipeline.game_urls.get(game.game_id, "")
                         if url:
                             await self.pipeline.refresh_game_detail(url, game.game_id)
                     last_scheduled_fetch = now
@@ -97,7 +95,7 @@ class IngestionScheduler:
                     if g.status.value == "final" and g.game_id not in self._final_fetched
                 ]
                 for game in final_games:
-                    url = self._game_urls.get(game.game_id, "")
+                    url = self.pipeline.game_urls.get(game.game_id, "")
                     if url:
                         await self.pipeline.refresh_game_detail(url, game.game_id)
                         self._final_fetched.add(game.game_id)
@@ -112,17 +110,9 @@ class IngestionScheduler:
                 await asyncio.sleep(5)
 
     async def _refresh_game_list(self) -> None:
-        """Fetch and parse game list, updating URL map."""
+        """Fetch and parse game list. URLs are stored in pipeline.game_urls."""
         today = date.today()
         summaries = await self.pipeline.refresh_game_list(today)
-
-        # NOTE: game URLs need to be extracted from parsed HTML links.
-        # For now we store a default URL pattern. This will be refined
-        # once we confirm the actual URL structure.
-        for s in summaries:
-            if s.game_id not in self._game_urls:
-                # Placeholder URL — will be populated from actual parsed links
-                self._game_urls[s.game_id] = ""
 
         logger.info(
             "Game list: %d total, %d live, %d scheduled, %d final",

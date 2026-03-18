@@ -62,15 +62,26 @@ class NormalizationPipeline:
         self.collector = collector
         self.parser = parser
         self.store = store
+        # Map game_id → game URL for detail fetching
+        self.game_urls: dict[str, str] = {}
 
     async def refresh_game_list(self, target_date: date) -> list[GameSummary]:
-        """Fetch and parse today's game list, updating store."""
+        """Fetch and parse today's game list, updating store and URL map."""
         try:
             snapshot = await self.collector.fetch_game_list(target_date)
-            summaries = self.parser.parse_game_list(snapshot)
+
+            # Use with_urls variant if available (MykboParser)
+            if hasattr(self.parser, "parse_game_list_with_urls"):
+                results = self.parser.parse_game_list_with_urls(snapshot)
+                summaries = []
+                for s, url in results:
+                    if url:
+                        self.game_urls[s.game_id] = url
+                    summaries.append(s)
+            else:
+                summaries = self.parser.parse_game_list(snapshot)
 
             for s in summaries:
-                # Recompute situation tags
                 if s.status.value == "live":
                     s.situation_tags = compute_situation_tags(
                         s.score.away,
@@ -82,7 +93,7 @@ class NormalizationPipeline:
                     )
                 self.store.upsert_summary(s.game_id, s)
 
-            logger.info("Refreshed game list: %d games", len(summaries))
+            logger.info("Refreshed game list: %d games, %d URLs", len(summaries), len(self.game_urls))
             return summaries
 
         except CollectorError as e:

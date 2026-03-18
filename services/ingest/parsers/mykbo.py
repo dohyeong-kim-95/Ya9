@@ -153,17 +153,25 @@ class MykboParser(BaseParser):
     """
 
     def parse_game_list(self, snapshot: RawSnapshot) -> list[GameSummary]:
-        """Parse daily scoreboard page into game summaries.
+        """Parse daily scoreboard page into game summaries."""
+        results = self.parse_game_list_with_urls(snapshot)
+        return [r[0] for r in results]
 
-        Expected HTML structure (NEEDS VERIFICATION):
-        - Game cards/rows in a container
-        - Each card contains: team names, scores, status, link to detail
+    def parse_game_list_with_urls(
+        self, snapshot: RawSnapshot
+    ) -> list[tuple[GameSummary, str]]:
+        """Parse schedule page into (GameSummary, game_url) pairs.
+
+        The URL contains the numeric game ID needed for detail fetching.
+        Schedule page is week-based: /schedule/week_of/{YYYY-MM-DD}
+
+        Returns only games matching the snapshot date.
         """
         soup = BeautifulSoup(snapshot.html, "html.parser")
-        games: list[GameSummary] = []
+        results: list[tuple[GameSummary, str]] = []
 
         # SELECTOR: Adjust these to match actual HTML structure
-        # Try common patterns for game cards
+        # Try common patterns for game cards/rows
         game_elements = (
             soup.select(".game-card")
             or soup.select(".scoreboard-game")
@@ -172,23 +180,40 @@ class MykboParser(BaseParser):
             or soup.select(".schedule-item")
         )
 
+        # Also try: links containing /games/{numeric_id}
         if not game_elements:
-            logger.warning("No game elements found in scoreboard page")
-            return games
+            game_links = soup.select("a[href*='/games/']")
+            if game_links:
+                # Use the parent container of each game link
+                game_elements = [
+                    link.parent for link in game_links
+                    if link.parent and link.parent.name != "nav"
+                ]
+
+        if not game_elements:
+            logger.warning("No game elements found in schedule page")
+            return results
+
+        target_date = snapshot.fetched_at.date()
 
         for el in game_elements:
             try:
-                game = self._parse_game_card(el, snapshot.fetched_at.date())
-                if game:
-                    games.append(game)
+                parsed = self._parse_game_card(el, target_date)
+                if not parsed:
+                    continue
+
+                game, game_url = parsed
+                results.append((game, game_url))
             except Exception:
                 logger.exception("Failed to parse game card")
                 continue
 
-        return games
+        return results
 
-    def _parse_game_card(self, el: Tag, game_date: date) -> GameSummary | None:
-        """Parse a single game card element into GameSummary."""
+    def _parse_game_card(
+        self, el: Tag, game_date: date
+    ) -> tuple[GameSummary, str] | None:
+        """Parse a single game card element into (GameSummary, game_url)."""
         # Extract team names — try multiple selector patterns
         team_els = (
             el.select(".team-name")
@@ -241,19 +266,28 @@ class MykboParser(BaseParser):
             inning_text = inning_el.get_text(strip=True)
             inning_num, inning_half = _parse_inning(inning_text)
 
-        # Extract game link for detail page
-        link_el = el.select_one("a[href]")
+        # Extract game link — look for /games/{numeric_id} pattern
         game_url = ""
-        if link_el:
-            game_url = link_el.get("href", "")
+        game_numeric_id = ""
+        for link in el.select("a[href]"):
+            href = link.get("href", "")
+            # Match /games/{numeric_id} or /games/{numeric_id}-slug
+            m = re.search(r"/games/(\d+)", href)
+            if m:
+                game_url = href
+                game_numeric_id = m.group(1)
+                break
 
-        # Build game_id
+        # Build game_id — prefer numeric ID from URL, fallback to date+teams
         away_code = _team_code(away_name)
         home_code = _team_code(home_name)
         date_str = game_date.strftime("%Y%m%d")
-        game_id = f"{date_str}_{away_code}_{home_code}"
+        if game_numeric_id:
+            game_id = game_numeric_id
+        else:
+            game_id = f"{date_str}_{away_code}_{home_code}"
 
-        return GameSummary(
+        summary = GameSummary(
             game_id=game_id,
             status=status,
             start_time=f"{game_date.isoformat()}T18:30:00+09:00",
@@ -265,6 +299,7 @@ class MykboParser(BaseParser):
             bases=Bases(first=False, second=False, third=False),
             situation_tags=[],
         )
+        return summary, game_url
 
     def parse_game_detail(self, snapshot: RawSnapshot) -> GameDetail:
         """Parse game detail page into full game state.
